@@ -1,16 +1,18 @@
 import numpy as np
 import random
 import pandas as pd
-import itertools
+from itertools import combinations
 
 
 def pre_processing(df, target_col='Purchase_Intent'):
     df = df.copy()
 
-    # Drop identifier-like columns only
-    drop_cols = ['Customer_ID', 'Location', 'Gender', 'Marital_Status', 'Purchase_Category', 'Purchase_Channel', 'Device_Used_for_Shopping', 'Payment_Method', 'Time_of_Purchase', 'Purchase_Intent', 'Shipping_Preference']
-    existing_drop_cols = [col for col in drop_cols if col in df.columns]
-    df.drop(columns=existing_drop_cols, inplace=True)
+    # Drop identifier column
+    if 'Customer_ID' in df.columns:
+        df.drop(columns=['Customer_ID'], inplace=True)
+
+    if 'Location' in df.columns:
+        df.drop(columns=['Location'], inplace=True)
 
     # Clean Purchase_Amount
     if 'Purchase_Amount' in df.columns:
@@ -29,15 +31,13 @@ def pre_processing(df, target_col='Purchase_Intent'):
     # Ordinal encoding
     ordinal_mappings = {
         'Income_Level': {
-            'Low': 0,
-            'Middle': 1,
-            'High': 2
+            'Middle': 0,
+            'High': 1
         },
         'Education_Level': {
             'High School': 0,
             "Bachelor's": 1,
-            "Master's": 2,
-            'PhD': 3
+            "Master's": 2
         },
         'Social_Media_Influence': {
             'None': 0,
@@ -64,9 +64,9 @@ def pre_processing(df, target_col='Purchase_Intent'):
 
     for col, mapping in ordinal_mappings.items():
         if col in df.columns:
-            df[col] = df[col].map(mapping)
+            df[col] = df[col].replace(mapping)
 
-    # Convert numeric columns
+    # Convert other numeric columns
     numeric_cols = [
         'Age',
         'Frequency_of_Purchase',
@@ -90,27 +90,42 @@ def pre_processing(df, target_col='Purchase_Intent'):
         df['Purchase_DayOfWeek'] = df['Time_of_Purchase'].dt.dayofweek
         df.drop(columns=['Time_of_Purchase'], inplace=True)
 
-    # Separate target before encoding predictors
+    # Separate target column
     y = None
     if target_col in df.columns:
         y = df[target_col].copy()
         df.drop(columns=[target_col], inplace=True)
 
-    # One-hot encode remaining nominal columns
-    nominal_cols = df.select_dtypes(include=['object', 'string', 'category']).columns.tolist()
+    # One-hot encode nominal columns
+    one_hot_cols = [
+        'Gender',
+        'Marital_Status',
+        'Purchase_Category',
+        'Purchase_Channel',
+        'Device_Used_for_Shopping',
+        'Payment_Method',
+        'Shipping_Preference'
+    ]
 
-    if nominal_cols:
-        df = pd.get_dummies(df, columns=nominal_cols, drop_first=False)
+    one_hot_cols = [col for col in one_hot_cols if col in df.columns]
+    df = pd.get_dummies(df, columns=one_hot_cols, drop_first=False)
 
-    # Fill missing values
     df = df.fillna(0)
-
-    # Convert everything to float
     df = df.astype(float)
+    df.to_csv("Post-Processing.csv", index=False)
+
 
     # Encode target separately
     if y is not None:
-        y = pd.Categorical(y).codes
+        if target_col == 'Purchase_Intent':
+            y = y.map({
+                'Need-based': 0,
+                'Planned': 0,
+                'Wants-based': 1,
+                'Impulsive': 1
+            })
+        else:
+            y = pd.Categorical(y).codes
 
     return df, y
 
@@ -283,6 +298,8 @@ def run_k_fold_df(X, y, num_folds, k):
         # normalize training and test data for this fold
         X_train, X_test = normalize_train_test_df(X_train, X_test)
 
+        X_train.to_csv("Post-processing.csv", index=False)
+
         # convert dataframes to lists so KNN functions can use them
         X_train_list, y_train_list = dataframe_to_lists(X_train, y_train)
         X_test_list, y_test_list = dataframe_to_lists(X_test, y_test)
@@ -294,6 +311,43 @@ def run_k_fold_df(X, y, num_folds, k):
     average_accuracy = sum(scores) / len(scores)
     return scores, average_accuracy
 
+def confusion_matrix_values(y_true, y_pred):
+    TP = FP = TN = FN = 0
+
+    for i in range(len(y_true)):
+        if y_true[i] == 1 and y_pred[i] == 1:
+            TP += 1
+        elif y_true[i] == 0 and y_pred[i] == 0:
+            TN += 1
+        elif y_true[i] == 0 and y_pred[i] == 1:
+            FP += 1
+        elif y_true[i] == 1 and y_pred[i] == 0:
+            FN += 1
+
+    return TP, FP, FN, TN
+
+def classification_metrics(y_true, y_pred):
+    TP, FP, FN, TN = confusion_matrix_values(y_true, y_pred)
+
+    accuracy = (TP + TN) / (TP + TN + FP + FN)
+
+    precision = TP / (TP + FP) if (TP + FP) != 0 else 0
+
+    sensitivity = TP / (TP + FN) if (TP + FN) != 0 else 0
+
+    specificity = TN / (TN + FP) if (TN + FP) != 0 else 0
+
+    return {
+        "TP": TP,
+        "FP": FP,
+        "FN": FN,
+        "TN": TN,
+        "Accuracy": accuracy,
+        "Precision": precision,
+        "Sensitivity": sensitivity,
+        "Specificity": specificity
+    }
+
 
 if __name__ == "__main__":
     # set the random seed so shuffling happens the same way every run
@@ -304,11 +358,13 @@ if __name__ == "__main__":
         keep_default_na=False
     )
 
-    df = df[['Purchase_Amount', 'Discount_Sensitivity', 'Discount_Used']] #Restrict columns
+    # Drop identifier-like columns only
+    drop_cols = ['Customer_ID', 'Location']
+    existing_drop_cols = [col for col in drop_cols if col in df.columns]
+    df.drop(columns=existing_drop_cols, inplace=True)
 
-    X, y = pre_processing(df, 'Discount_Used')
+    X, y = pre_processing(df, 'Purchase_Intent')
 
-    k = 7
     num_folds1 = 5
     num_folds2 = 10
 
@@ -318,28 +374,78 @@ if __name__ == "__main__":
     # normalize training and test data
     X_train, X_test = normalize_train_test_df(X_train, X_test)
 
+    X_train.to_csv("PostProcessing.csv", index=False)
+
     # convert dataframes to lists so KNN functions can use them
     X_train_list, y_train_list = dataframe_to_lists(X_train, y_train)
     X_test_list, y_test_list = dataframe_to_lists(X_test, y_test)
 
-    predictions = predict_all(X_train_list, y_train_list, X_test_list, k)
-    accuracy = accuracy_score(y_test_list, predictions)
-
-    print("80/20 Split Results")
-    print("Predictions:", predictions)
     print("Actual:", y_test_list)
-    print("Accuracy:", accuracy)
     print()
 
-    # 5-fold cross validation
-    scores_5, average_5 = run_k_fold_df(X, y, num_folds1, k)
+    # test multiple k values
+    k_values = [1, 3, 5, 7, 9, 11, 15, 21]
+
+    best_k = None
+    best_accuracy = -1
+    best_predictions = None
+    best_metrics = None
+
+    for k in k_values:
+        predictions = predict_all(X_train_list, y_train_list, X_test_list, k)
+        metrics = classification_metrics(y_test_list, predictions)
+        accuracy = metrics["Accuracy"]
+
+        print(f"80/20 Split Results for k = {k}")
+        print("Accuracy:", metrics["Accuracy"])
+        print("Precision:", metrics["Precision"])
+        print("Sensitivity:", metrics["Sensitivity"])
+        print("Specificity:", metrics["Specificity"])
+
+        print("\nConfusion Matrix Values")
+        print("TP:", metrics["TP"])
+        print("FP:", metrics["FP"])
+        print("FN:", metrics["FN"])
+        print("TN:", metrics["TN"])
+        print()
+
+        if accuracy > best_accuracy:
+            best_accuracy = accuracy
+            best_k = k
+            best_predictions = predictions
+            best_metrics = metrics
+
+    print("Best k on 80/20 Split:", best_k)
+    print("Best Accuracy:", best_accuracy)
+    print()
+
+    print("Best 80/20 Split Metrics")
+    print("Accuracy:", best_metrics["Accuracy"])
+    print("Precision:", best_metrics["Precision"])
+    print("Sensitivity:", best_metrics["Sensitivity"])
+    print("Specificity:", best_metrics["Specificity"])
+
+    print("\nBest Confusion Matrix Values")
+    print("TP:", best_metrics["TP"])
+    print("FP:", best_metrics["FP"])
+    print("FN:", best_metrics["FN"])
+    print("TN:", best_metrics["TN"])
+    print()
+
+    print("Real Label  Predicted Label")
+    for real, pred in zip(y_test_list, best_predictions):
+        print(real, "        ", pred)
+    print()
+
+    # 5-fold cross validation using best k
+    scores_5, average_5 = run_k_fold_df(X, y, num_folds1, best_k)
     print("5-Fold Cross Validation")
     print("Fold Accuracies:", scores_5)
     print("Average Accuracy:", average_5)
     print()
 
-    # 10-fold cross validation
-    scores_10, average_10 = run_k_fold_df(X, y, num_folds2, k)
+    # 10-fold cross validation using best k
+    scores_10, average_10 = run_k_fold_df(X, y, num_folds2, best_k)
     print("10-Fold Cross Validation")
     print("Fold Accuracies:", scores_10)
     print("Average Accuracy:", average_10)
