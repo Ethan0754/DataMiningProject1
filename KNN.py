@@ -1,6 +1,7 @@
 import numpy as np
 import random
 import pandas as pd
+from svm_model import svm_80_20, svm_20_80, svm_k_fold, print_svm_results
 from itertools import combinations
 
 
@@ -374,7 +375,7 @@ if __name__ == "__main__":
     # normalize training and test data
     X_train, X_test = normalize_train_test_df(X_train, X_test)
 
-    X_train.to_csv("PostProcessing.csv", index=False)
+    X_train.to_csv("Post-Processing.csv", index=False)
 
     # convert dataframes to lists so KNN functions can use them
     X_train_list, y_train_list = dataframe_to_lists(X_train, y_train)
@@ -449,3 +450,61 @@ if __name__ == "__main__":
     print("10-Fold Cross Validation")
     print("Fold Accuracies:", scores_10)
     print("Average Accuracy:", average_10)
+
+    # SVM 80/20 (Training/Test)
+    y_test, predictions, metrics = svm_80_20(
+        X,
+        y,
+        train_test_split_df,
+        normalize_train_test_df,
+        classification_metrics
+    )
+
+    print_svm_results("SVM 80/20 Results", metrics)
+
+    print("Real Label  Predicted Label")
+    for real, pred in zip(y_test, predictions):
+        print(real, "       ", pred)
+
+    print()
+
+    # SVM 20/80 (Training/Test)
+    y_test, predictions, metrics = svm_20_80(
+        X,
+        y,
+        train_test_split_df,
+        normalize_train_test_df,
+        classification_metrics
+    )
+
+    print_svm_results("SVM 20/80 Results", metrics)
+
+    # SVM 5-fold Cross Validation
+    scores_5, metrics_5 = svm_k_fold(
+        X,
+        y,
+        num_folds1,
+        make_folds_df,
+        get_train_test_from_folds_df,
+        normalize_train_test_df,
+        classification_metrics
+    )
+
+    print("SVM 5-Fold Cross Validation")
+    print("Fold Accuracies:", scores_5)
+    print_svm_results("Average 5-Fold Metrics", metrics_5)
+
+    # SVM 10-fold Cross Validation
+    scores_10, metrics_10 = svm_k_fold(
+        X,
+        y,
+        num_folds2,
+        make_folds_df,
+        get_train_test_from_folds_df,
+        normalize_train_test_df,
+        classification_metrics
+    )
+
+    print("SVM 10-Fold Cross Validation")
+    print("Fold Accuracies:", scores_10)
+    print_svm_results("Average 10-Fold Metrics", metrics_10)
