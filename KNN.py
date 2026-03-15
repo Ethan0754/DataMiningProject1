@@ -170,23 +170,21 @@ def k_nearest_neighbors(X_train, y_train, test_point, k):
     return neighbors
 
 def predict_class(neighbors):
-    class_scores = {}
+    class_counts = {}
 
     for distance, label in neighbors:
 
-        weight = 1 / (distance + 1e-9)
+        if label not in class_counts:
+            class_counts[label] = 0
 
-        if label not in class_scores:
-            class_scores[label] = 0
-
-        class_scores[label] += weight
+        class_counts[label] += 1
 
     best_label = None
-    best_score = -1
+    best_count = -1
 
-    for label in class_scores:
-        if class_scores[label] > best_score:
-            best_score = class_scores[label]
+    for label in class_counts:
+        if class_counts[label] > best_count:
+            best_count = class_counts[label]
             best_label = label
 
     return best_label
