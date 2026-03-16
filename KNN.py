@@ -314,6 +314,7 @@ def classification_metrics(y_true, y_pred):
     }
 
 
+
 if __name__ == "__main__":
     df = pd.read_csv(
         "Group 5-Ecommerce_Consumer_Behavior_Analysis_Data.csv",
@@ -378,19 +379,133 @@ if __name__ == "__main__":
     print()
 
     # 5-fold cross validation using best k
-    scores_5, average_5 = run_k_fold_df(X, y, num_folds1, best_k)
+    folds_5 = make_folds_df(X, y, num_folds1)
+    scores_5 = []
+    all_y_true_5 = []
+    all_y_pred_5 = []
+
+    for i in range(num_folds1):
+        X_train, y_train, X_test, y_test = get_train_test_from_folds_df(folds_5, i)
+
+        X_train, X_test = normalize_train_test_df(X_train, X_test)
+        X_train = threshold_normalize_df(X_train)
+        X_test = threshold_normalize_df(X_test)
+
+        X_train_list, y_train_list = dataframe_to_lists(X_train, y_train)
+        X_test_list, y_test_list = dataframe_to_lists(X_test, y_test)
+
+        predictions = predict_all(X_train_list, y_train_list, X_test_list, best_k)
+        accuracy = accuracy_score(y_test_list, predictions)
+
+        scores_5.append(accuracy)
+        all_y_true_5.extend(y_test_list)
+        all_y_pred_5.extend(predictions)
+
+    average_5 = sum(scores_5) / len(scores_5)
+    metrics_5 = classification_metrics(all_y_true_5, all_y_pred_5)
+
     print("KNN 5-Fold Cross Validation")
     print("Best k used:", best_k)
     print("Fold Accuracies:", scores_5)
     print("Average Accuracy:", average_5)
+    print("Precision:", metrics_5["Precision"])
+    print("Sensitivity:", metrics_5["Sensitivity"])
+    print("Specificity:", metrics_5["Specificity"])
+
+    print("\nConfusion Matrix Values")
+    print("TP:", metrics_5["TP"])
+    print("FP:", metrics_5["FP"])
+    print("FN:", metrics_5["FN"])
+    print("TN:", metrics_5["TN"])
     print()
 
     # 10-fold cross validation using best k
-    scores_10, average_10 = run_k_fold_df(X, y, num_folds2, best_k)
+    folds_10 = make_folds_df(X, y, num_folds2)
+    scores_10 = []
+    all_y_true_10 = []
+    all_y_pred_10 = []
+
+    for i in range(num_folds2):
+        X_train, y_train, X_test, y_test = get_train_test_from_folds_df(folds_10, i)
+
+        X_train, X_test = normalize_train_test_df(X_train, X_test)
+        X_train = threshold_normalize_df(X_train)
+        X_test = threshold_normalize_df(X_test)
+
+        X_train_list, y_train_list = dataframe_to_lists(X_train, y_train)
+        X_test_list, y_test_list = dataframe_to_lists(X_test, y_test)
+
+        predictions = predict_all(X_train_list, y_train_list, X_test_list, best_k)
+        accuracy = accuracy_score(y_test_list, predictions)
+
+        scores_10.append(accuracy)
+        all_y_true_10.extend(y_test_list)
+        all_y_pred_10.extend(predictions)
+
+    average_10 = sum(scores_10) / len(scores_10)
+    metrics_10 = classification_metrics(all_y_true_10, all_y_pred_10)
+
     print("KNN 10-Fold Cross Validation")
     print("Best k used:", best_k)
     print("Fold Accuracies:", scores_10)
     print("Average Accuracy:", average_10)
+    print("Precision:", metrics_10["Precision"])
+    print("Sensitivity:", metrics_10["Sensitivity"])
+    print("Specificity:", metrics_10["Specificity"])
+
+    print("\nConfusion Matrix Values")
+    print("TP:", metrics_10["TP"])
+    print("FP:", metrics_10["FP"])
+    print("FN:", metrics_10["FN"])
+    print("TN:", metrics_10["TN"])
+    print()
+
+    # KNN test using only the two most important features
+    important_features = ['Purchase_Amount', 'Time_of_Purchase']
+    X_two_features = X[important_features].copy()
+
+    X_train, y_train, X_test, y_test = train_test_split_df(X_two_features, y, train_percent=0.8)
+
+    X_train, X_test = normalize_train_test_df(X_train, X_test)
+    X_train = threshold_normalize_df(X_train)
+    X_test = threshold_normalize_df(X_test)
+
+    X_train_list, y_train_list = dataframe_to_lists(X_train, y_train)
+    X_test_list, y_test_list = dataframe_to_lists(X_test, y_test)
+
+    best_k_two_features = None
+    best_accuracy_two_features = -1
+    best_predictions_two_features = None
+    best_metrics_two_features = None
+
+    for k in k_values:
+        predictions = predict_all(X_train_list, y_train_list, X_test_list, k)
+        metrics = classification_metrics(y_test_list, predictions)
+        accuracy = metrics["Accuracy"]
+
+        if accuracy > best_accuracy_two_features:
+            best_accuracy_two_features = accuracy
+            best_k_two_features = k
+            best_predictions_two_features = predictions
+            best_metrics_two_features = metrics
+
+    print("KNN 80/20 Split Using Only Purchase_Amount and Time_of_Purchase")
+    print("Best k:", best_k_two_features)
+    print("Accuracy:", best_metrics_two_features["Accuracy"])
+    print("Precision:", best_metrics_two_features["Precision"])
+    print("Sensitivity:", best_metrics_two_features["Sensitivity"])
+    print("Specificity:", best_metrics_two_features["Specificity"])
+
+    print("\nConfusion Matrix Values")
+    print("TP:", best_metrics_two_features["TP"])
+    print("FP:", best_metrics_two_features["FP"])
+    print("FN:", best_metrics_two_features["FN"])
+    print("TN:", best_metrics_two_features["TN"])
+    print()
+
+    print("Real Label  Predicted Label")
+    for real, pred in zip(y_test_list, best_predictions_two_features):
+        print(real, "        ", pred)
     print()
 
     # SVM 80/20 (Training/Test)
