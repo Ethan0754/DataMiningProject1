@@ -1,101 +1,51 @@
 import numpy as np
 import pandas as pd
 import random
-from svm_model import svm_80_20, svm_20_80, svm_k_fold, print_svm_results
+from svm_model import svm_80_20, svm_k_fold, print_svm_results
 from itertools import combinations
 
 
-def pre_processing(df, target_col='Purchase_Intent'):
+def pre_processing(df, target_col='Grade class 1: 90+  0:90-', feature_columns=None):
     df = df.copy()
 
     # Drop identifier-like columns
-    drop_cols = ['Customer_ID', 'Location']
+    drop_cols = ['Unnamed: 0']
     existing_drop_cols = [col for col in drop_cols if col in df.columns]
     df.drop(columns=existing_drop_cols, inplace=True)
 
-    # Clean Purchase_Amount column
-    if 'Purchase_Amount' in df.columns:
-        df['Purchase_Amount'] = (
-            df['Purchase_Amount']
-            .replace(r'[\$, ]', '', regex=True)
-            .astype(float)
-        )
-
-    # Convert Time_of_Purchase -> day of week
-    if 'Time_of_Purchase' in df.columns:
-        df['Time_of_Purchase'] = pd.to_datetime(df['Time_of_Purchase'], errors='coerce')
-        df['Time_of_Purchase'] = df['Time_of_Purchase'].dt.dayofweek
-
-    # Convert boolean columns to binary
-    bool_cols = ['Discount_Used', 'Customer_Loyalty_Program_Member']
-    for col in bool_cols:
-        if col in df.columns:
-            df[col] = df[col].astype(int)
-
-    # Convert numeric columns
-    numeric_cols = [
-        'Age',
-        'Purchase_Amount',
-        'Frequency_of_Purchase',
-        'Brand_Loyalty',
-        'Product_Rating',
-        'Time_Spent_on_Product_Research(hours)',
-        'Return_Rate',
-        'Customer_Satisfaction',
-        'Time_to_Decision',
-        'Time_of_Purchase'
-    ]
-
-    for col in numeric_cols:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors='coerce')
+    if feature_columns is not None:
+        keep_cols = [col for col in feature_columns if col in df.columns]
+        if target_col in df.columns:
+            df = df[[target_col] + keep_cols].copy()
+        else:
+            df = df[keep_cols].copy()
 
     # Separate target column
     y = None
     if target_col in df.columns:
-        y = df[target_col].copy()
+        y = pd.to_numeric(df[target_col], errors='coerce').fillna(0).astype(int)
         df.drop(columns=[target_col], inplace=True)
 
-    # Automatically encode all categorical columns
-    categorical_cols = df.select_dtypes(include=['object']).columns
-
-    for col in categorical_cols:
-        unique_vals = df[col].dropna().unique()
-        mapping = {val: i for i, val in enumerate(unique_vals)}
-        df[col] = df[col].map(mapping)
-
+    # Ensure all features are numeric
+    for col in df.columns:
+        df[col] = pd.to_numeric(df[col], errors='coerce')
 
     # Fill missing values
     df = df.fillna(0)
 
-    # Encode target
-    if y is not None:
-        if target_col == 'Purchase_Intent':
-            y = y.map({
-                'Need-based': 0,
-                'Planned': 0,
-                'Wants-based': 1,
-                'Impulsive': 1
-            })
-        else:
-            y = pd.Categorical(y).codes
-
     return df.astype(float), y
 
-def threshold_normalize_df(X):
-    X = X.copy()
 
-    for col in X.columns:
-        X[col] = (X[col] >= 0.5).astype(int)
+def no_normalization(X_train, X_test):
+    return X_train.copy(), X_test.copy()
 
-    return X
 
 def train_test_split_df(X, y, train_percent=0.8):
     data = X.copy()
     data['target'] = y
 
     # shuffle the dataset randomly
-    data = data.sample(frac=1).reset_index(drop=True)
+    data = data.sample(frac=1, random_state=42).reset_index(drop=True)
 
     # split the data by training_percent
     split_index = int(len(data) * train_percent)
@@ -109,26 +59,6 @@ def train_test_split_df(X, y, train_percent=0.8):
     y_test = test_data['target'].reset_index(drop=True)
 
     return X_train, y_train, X_test, y_test
-
-
-def normalize_train_test_df(X_train, X_test):
-    X_train = X_train.copy()
-    X_test = X_test.copy()
-
-    for col in X_train.columns:
-
-        min_val = X_train[col].min()
-        max_val = X_train[col].max()
-
-        # Avoid division by zero
-        if max_val == min_val:
-            X_train[col] = 0
-            X_test[col] = 0
-        else:
-            X_train[col] = (X_train[col] - min_val) / (max_val - min_val)
-            X_test[col] = (X_test[col] - min_val) / (max_val - min_val)
-
-    return X_train, X_test
 
 
 def dataframe_to_lists(X, y):
@@ -156,6 +86,7 @@ def jaccard_distance(train_data, test_data):
 
     return 1 - (intersection / union)
 
+
 def k_nearest_neighbors(X_train, y_train, test_point, k):
     distances = []
 
@@ -169,11 +100,11 @@ def k_nearest_neighbors(X_train, y_train, test_point, k):
     neighbors = distances[:k]
     return neighbors
 
+
 def predict_class(neighbors):
     class_counts = {}
 
     for distance, label in neighbors:
-
         if label not in class_counts:
             class_counts[label] = 0
 
@@ -206,7 +137,7 @@ def make_folds_df(X, y, k):
     data['target'] = y
 
     # shuffle the dataset randomly
-    data = data.sample(frac=1).reset_index(drop=True)
+    data = data.sample(frac=1, random_state=42).reset_index(drop=True)
 
     folds = []
     fold_size = len(data) // k  # floor division
@@ -263,9 +194,6 @@ def run_k_fold_df(X, y, num_folds, k):
     for i in range(num_folds):
         X_train, y_train, X_test, y_test = get_train_test_from_folds_df(folds, i)
 
-        # normalize training and test data for this fold
-        X_train, X_test = normalize_train_test_df(X_train, X_test)
-
         # convert dataframes to lists so KNN functions can use them
         X_train_list, y_train_list = dataframe_to_lists(X_train, y_train)
         X_test_list, y_test_list = dataframe_to_lists(X_test, y_test)
@@ -314,27 +242,31 @@ def classification_metrics(y_true, y_pred):
     }
 
 
-
 if __name__ == "__main__":
-    df = pd.read_csv(
-        "Group 5-Ecommerce_Consumer_Behavior_Analysis_Data.csv",
+    train_df = pd.read_csv(
+        "Training-dataset.csv",
         keep_default_na=False
     )
 
-    X, y = pre_processing(df, 'Purchase_Intent')
+    test_df = pd.read_csv(
+        "Testing-dataset.csv",
+        keep_default_na=False
+    )
+
+    target_col = 'Grade class 1: 90+  0:90-'
+
+    X, y = pre_processing(train_df, target_col)
+    X_external_test, y_external_test = pre_processing(test_df, target_col, feature_columns=X.columns.tolist())
+    X_external_test = X_external_test.reindex(columns=X.columns, fill_value=0)
 
     num_folds1 = 5
     num_folds2 = 10
 
-    # 80/20 split
-    X_train, y_train, X_test, y_test = train_test_split_df(X, y, train_percent=0.8)
-
-    # normalize training and test data
-    X_train, X_test = normalize_train_test_df(X_train, X_test)
-    X_train = threshold_normalize_df(X_train)
-    X_test = threshold_normalize_df(X_test)
-
-    X_train.to_csv("PostProcessing.csv", index=False)
+    # External train/test
+    X_train = X.copy()
+    y_train = y.copy()
+    X_test = X_external_test.copy()
+    y_test = y_external_test.copy()
 
     # convert dataframes to lists so KNN functions can use them
     X_train_list, y_train_list = dataframe_to_lists(X_train, y_train)
@@ -359,7 +291,7 @@ if __name__ == "__main__":
             best_predictions = predictions
             best_metrics = metrics
 
-    print("KNN Best 80/20 Split Results")
+    print("KNN External Train/Test Results")
     print("Best k:", best_k)
     print("Accuracy:", best_metrics["Accuracy"])
     print("Precision:", best_metrics["Precision"])
@@ -386,10 +318,6 @@ if __name__ == "__main__":
 
     for i in range(num_folds1):
         X_train, y_train, X_test, y_test = get_train_test_from_folds_df(folds_5, i)
-
-        X_train, X_test = normalize_train_test_df(X_train, X_test)
-        X_train = threshold_normalize_df(X_train)
-        X_test = threshold_normalize_df(X_test)
 
         X_train_list, y_train_list = dataframe_to_lists(X_train, y_train)
         X_test_list, y_test_list = dataframe_to_lists(X_test, y_test)
@@ -428,10 +356,6 @@ if __name__ == "__main__":
     for i in range(num_folds2):
         X_train, y_train, X_test, y_test = get_train_test_from_folds_df(folds_10, i)
 
-        X_train, X_test = normalize_train_test_df(X_train, X_test)
-        X_train = threshold_normalize_df(X_train)
-        X_test = threshold_normalize_df(X_test)
-
         X_train_list, y_train_list = dataframe_to_lists(X_train, y_train)
         X_test_list, y_test_list = dataframe_to_lists(X_test, y_test)
 
@@ -461,14 +385,14 @@ if __name__ == "__main__":
     print()
 
     # KNN test using only the two most important features
-    important_features = ['Purchase_Amount', 'Time_of_Purchase']
+    important_features = X.var().sort_values(ascending=False).head(2).index.tolist()
     X_two_features = X[important_features].copy()
+    X_test_two_features = X_external_test[important_features].copy()
 
-    X_train, y_train, X_test, y_test = train_test_split_df(X_two_features, y, train_percent=0.8)
-
-    X_train, X_test = normalize_train_test_df(X_train, X_test)
-    X_train = threshold_normalize_df(X_train)
-    X_test = threshold_normalize_df(X_test)
+    X_train = X_two_features.copy()
+    y_train = y.copy()
+    X_test = X_test_two_features.copy()
+    y_test = y_external_test.copy()
 
     X_train_list, y_train_list = dataframe_to_lists(X_train, y_train)
     X_test_list, y_test_list = dataframe_to_lists(X_test, y_test)
@@ -489,7 +413,7 @@ if __name__ == "__main__":
             best_predictions_two_features = predictions
             best_metrics_two_features = metrics
 
-    print("KNN 80/20 Split Using Only Purchase_Amount and Time_of_Purchase")
+    print(f"KNN External Train/Test Using Only {important_features[0]} and {important_features[1]}")
     print("Best k:", best_k_two_features)
     print("Accuracy:", best_metrics_two_features["Accuracy"])
     print("Precision:", best_metrics_two_features["Precision"])
@@ -512,12 +436,14 @@ if __name__ == "__main__":
     y_test, predictions, metrics = svm_80_20(
         X,
         y,
+        X_external_test,
+        y_external_test,
         train_test_split_df,
-        normalize_train_test_df,
+        no_normalization,
         classification_metrics
     )
 
-    print_svm_results("SVM 80/20 Results", metrics)
+    print_svm_results("SVM External Train/Test Results", metrics)
 
     print("Real Label  Predicted Label")
     for real, pred in zip(y_test, predictions):
@@ -526,15 +452,17 @@ if __name__ == "__main__":
     print()
 
     # SVM 20/80 (Training/Test)
-    y_test, predictions, metrics = svm_20_80(
-        X,
-        y,
-        train_test_split_df,
-        normalize_train_test_df,
-        classification_metrics
-    )
+   # y_test, predictions, metrics = svm_20_80(
+       # X,
+       # y,
+       # X_external_test,
+       # y_external_test,
+       # train_test_split_df,
+       # no_normalization,
+       # classification_metrics
+    #)
 
-    print_svm_results("SVM 20/80 Results", metrics)
+    #print_svm_results("SVM External Train/Test Results", metrics)
 
     # SVM 5-fold Cross Validation
     scores_5, metrics_5 = svm_k_fold(
@@ -543,7 +471,7 @@ if __name__ == "__main__":
         num_folds1,
         make_folds_df,
         get_train_test_from_folds_df,
-        normalize_train_test_df,
+        no_normalization,
         classification_metrics
     )
 
@@ -558,7 +486,7 @@ if __name__ == "__main__":
         num_folds2,
         make_folds_df,
         get_train_test_from_folds_df,
-        normalize_train_test_df,
+        no_normalization,
         classification_metrics
     )
 

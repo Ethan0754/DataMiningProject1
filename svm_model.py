@@ -10,23 +10,28 @@ def svm_train_predict(X_train, y_train, X_test):
     return predictions.tolist()
 
 # Run 80 training 20 testing with SVM
-def svm_80_20(X, y, train_test_split_df, normalize_train_test_df, classification_metrics):
-    X_train, y_train, X_test, y_test = train_test_split_df(X, y, train_percent=0.8)
-    X_train, X_test = normalize_train_test_df(X_train, X_test)
+def svm_80_20(X, y, X_test, y_test, train_test_split_df, normalize_train_test_df, classification_metrics):
+    X_train = X.copy()
+    y_train = y.copy()
+    X_eval = X_test.copy()
+    y_eval = y_test.copy()
+    X_train, X_eval = normalize_train_test_df(X_train, X_eval)
 
-    predictions = svm_train_predict(X_train, y_train, X_test)
-    y_test_list = y_test.tolist()
+    predictions = svm_train_predict(X_train, y_train, X_eval)
+    y_test_list = y_eval.tolist()
     metrics = classification_metrics(y_test_list, predictions)
 
     return y_test_list, predictions, metrics
 
 # Run 20 training 80 testing with SVM
-def svm_20_80(X, y, train_test_split_df, normalize_train_test_df, classification_metrics):
-    X_train, y_train, X_test, y_test = train_test_split_df(X, y, train_percent=0.2)
-    X_train, X_test = normalize_train_test_df(X_train, X_test)
+#def svm_20_80(X, y, X_test, y_test, train_test_split_df, normalize_train_test_df, classification_metrics):
+ #  y_train = y.copy()
+    X_eval = X_test.copy()
+    y_eval = y_test.copy()
+    X_train, X_eval = normalize_train_test_df(X_train, X_eval)
 
-    predictions = svm_train_predict(X_train, y_train, X_test)
-    y_test_list = y_test.tolist()
+    predictions = svm_train_predict(X_train, y_train, X_eval)
+    y_test_list = y_eval.tolist()
     metrics = classification_metrics(y_test_list, predictions)
 
     return y_test_list, predictions, metrics
