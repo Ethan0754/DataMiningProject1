@@ -2,84 +2,54 @@ import pandas as pd
 from sklearn.svm import SVC
 
 
-def pre_processing(df, target_col='Grade class 1: 90+  0:90-', feature_columns=None):
+def pre_processing(df, target_col='Grade class 1: 90+  0:90-'):
+    """
+    Preprocess the wine dataset for Project 1 Phase 2.
+
+    Assumptions:
+    - First column is a wine-name identifier (not a predictor)
+    - Target column is binary (0 or 1)
+    - Remaining columns are already binary predictor features
+    """
+
     df = df.copy()
 
-    # Drop common index/id columns if present
-    drop_cols = ['Unnamed: 0']
-    existing_drop_cols = [col for col in drop_cols if col in df.columns]
-    df.drop(columns=existing_drop_cols, inplace=True)
+    # Drop the identifier column (wine name column)
+    df = df.iloc[:, 1:]
 
-    # Separate target first
-    y = None
-    if target_col in df.columns:
-        y = pd.to_numeric(df[target_col], errors='coerce').fillna(0).astype(int)
-        df.drop(columns=[target_col], inplace=True)
+    # Separate target column
+    y = df[target_col].astype(int)
 
-    # If specific feature columns are provided, keep only those
-    if feature_columns is not None:
-        keep_cols = [col for col in feature_columns if col in df.columns]
-        df = df[keep_cols].copy()
+    # Keep predictor columns only
+    X = df.drop(columns=[target_col]).astype(int)
 
-    # Drop non-numeric / identifier-like columns
-    # This removes the first wine-name column shown in your screenshot.
-    non_numeric_cols = [
-        col for col in df.columns
-        if not pd.api.types.is_numeric_dtype(df[col])
-    ]
-    df.drop(columns=non_numeric_cols, inplace=True)
-
-    # Convert all remaining features to numeric just in case
-    for col in df.columns:
-        df[col] = pd.to_numeric(df[col], errors='coerce')
-
-    # Fill missing values
-    df = df.fillna(0)
-
-    return df.astype(float), y
-
-
-def no_normalization(X_train, X_test):
-    return X_train.copy(), X_test.copy()
-
-
-def train_test_split_df(X, y, train_percent=0.8):
-    data = X.copy()
-    data['target'] = y
-
-    # Shuffle dataset
-    data = data.sample(frac=1, random_state=42).reset_index(drop=True)
-
-    split_index = int(len(data) * train_percent)
-    train_data = data.iloc[:split_index]
-    test_data = data.iloc[split_index:]
-
-    X_train = train_data.drop(columns=['target']).reset_index(drop=True)
-    y_train = train_data['target'].reset_index(drop=True)
-
-    X_test = test_data.drop(columns=['target']).reset_index(drop=True)
-    y_test = test_data['target'].reset_index(drop=True)
-
-    return X_train, y_train, X_test, y_test
+    return X, y
 
 
 def dataframe_to_lists(X, y):
-    X_values = X.to_numpy(dtype=float).tolist()
+    """
+    Convert pandas DataFrame and Series to Python lists
+    for use with the custom KNN implementation.
+    """
+
+    x_values = X.to_numpy(dtype=int).tolist()
     y_values = y.tolist()
-    return X_values, y_values
+
+    return x_values, y_values
 
 
 def jaccard_distance(train_data, test_data):
+    """
+    Compute Jaccard distance between two binary feature vectors.
+    Used because all predictor features in this dataset are binary.
+    """
     intersection = 0
     union = 0
 
     for i in range(len(train_data)):
-        a = 1 if train_data[i] != 0 else 0
-        b = 1 if test_data[i] != 0 else 0
-
-        if a == 1 and b == 1:
+        if train_data[i] == 1 and test_data[i] == 1:
             intersection += 1
-        if a == 1 or b == 1:
+        if train_data[i] == 1 or test_data[i] == 1:
             union += 1
 
     if union == 0:
@@ -95,12 +65,18 @@ def k_nearest_neighbors(X_train, y_train, test_point, k):
         distance = jaccard_distance(X_train[i], test_point)
         distances.append((distance, y_train[i]))
 
+    # Sort training points by distance from the test point (smallest distance first)
     distances.sort(key=lambda pair: pair[0])
+
     neighbors = distances[:k]
     return neighbors
 
 
 def predict_class(neighbors):
+    """
+    Majority vote.
+    If there is a tie, choose the class of the closest neighbor among the tied classes.
+    """
     class_counts = {}
 
     for distance, label in neighbors:
@@ -108,36 +84,28 @@ def predict_class(neighbors):
             class_counts[label] = 0
         class_counts[label] += 1
 
-    best_label = None
-    best_count = -1
+    best_count = max(class_counts.values())
+    tied_labels = [label for label, count in class_counts.items() if count == best_count]
 
-    for label in class_counts:
-        if class_counts[label] > best_count:
-            best_count = class_counts[label]
-            best_label = label
+    # No tie
+    if len(tied_labels) == 1:
+        return tied_labels[0]
 
-    return best_label
+    # Tie-break rule: choose the label of the closest neighbor among tied labels
+    for distance, label in neighbors:
+        if label in tied_labels:
+            return label
 
 
 def predict_all(X_train, y_train, X_test, k):
     predictions = []
 
     for test_point in X_test:
-        neighbor_labels = k_nearest_neighbors(X_train, y_train, test_point, k)
-        prediction = predict_class(neighbor_labels)
+        neighbors = k_nearest_neighbors(X_train, y_train, test_point, k)
+        prediction = predict_class(neighbors)
         predictions.append(prediction)
 
     return predictions
-
-
-def accuracy_score(y_true, y_pred):
-    correct = 0
-
-    for i in range(len(y_true)):
-        if y_true[i] == y_pred[i]:
-            correct += 1
-
-    return correct / len(y_true)
 
 
 def confusion_matrix_values(y_true, y_pred):
@@ -159,7 +127,8 @@ def confusion_matrix_values(y_true, y_pred):
 def classification_metrics(y_true, y_pred):
     TP, FP, FN, TN = confusion_matrix_values(y_true, y_pred)
 
-    accuracy = (TP + TN) / (TP + TN + FP + FN) if (TP + TN + FP + FN) != 0 else 0
+    total = TP + FP + FN + TN
+    accuracy = (TP + TN) / total if total != 0 else 0
     precision = TP / (TP + FP) if (TP + FP) != 0 else 0
     sensitivity = TP / (TP + FN) if (TP + FN) != 0 else 0
     specificity = TN / (TN + FP) if (TN + FP) != 0 else 0
@@ -183,11 +152,19 @@ def print_results(title, metrics):
     print("Sensitivity:", metrics["Sensitivity"])
     print("Specificity:", metrics["Specificity"])
     print()
+
     print("Confusion Matrix Values")
     print("TP:", metrics["TP"])
     print("FP:", metrics["FP"])
     print("FN:", metrics["FN"])
     print("TN:", metrics["TN"])
+    print()
+
+
+def print_label_predictions(y_true, y_pred):
+    print("Real Label  Predicted Label")
+    for real, pred in zip(y_true, y_pred):
+        print(real, "        ", pred)
     print()
 
 
@@ -209,88 +186,52 @@ if __name__ == "__main__":
 
     target_col = 'Grade class 1: 90+  0:90-'
 
-    # Preprocess training data
-    X_train_full, y_train_full = pre_processing(train_df, target_col)
+    # Use the provided split directly
+    X_train, y_train = pre_processing(train_df, target_col)
+    X_test, y_test = pre_processing(test_df, target_col)
 
-    # Preprocess testing data using same feature columns
-    X_test_external, y_test_external = pre_processing(
-        test_df,
-        target_col,
-        feature_columns=X_train_full.columns.tolist()
-    )
-
-    # Make sure testing columns match training columns exactly
-    X_test_external = X_test_external.reindex(columns=X_train_full.columns, fill_value=0)
+    # Make sure test columns match train columns exactly
+    X_test = X_test.reindex(columns=X_train.columns, fill_value=0)
 
     # -----------------------------
     # PART 2 + PART 3: KNN (Custom)
     # -----------------------------
-    X_train_list, y_train_list = dataframe_to_lists(X_train_full, y_train_full)
-    X_test_list, y_test_list = dataframe_to_lists(X_test_external, y_test_external)
+    # k is chosen ahead of time to avoid using the test set to choose the model parameter
+    k = 5
 
-    k_values = [1, 3, 5, 7, 9, 11, 15, 21]
+    X_train_list, y_train_list = dataframe_to_lists(X_train, y_train)
+    X_test_list, y_test_list = dataframe_to_lists(X_test, y_test)
 
-    best_k = None
-    best_accuracy = -1
-    best_predictions = None
-    best_metrics = None
+    knn_predictions = predict_all(X_train_list, y_train_list, X_test_list, k)
+    knn_metrics = classification_metrics(y_test_list, knn_predictions)
 
-    for k in k_values:
-        predictions = predict_all(X_train_list, y_train_list, X_test_list, k)
-        metrics = classification_metrics(y_test_list, predictions)
-        accuracy = metrics["Accuracy"]
-
-        if accuracy > best_accuracy:
-            best_accuracy = accuracy
-            best_k = k
-            best_predictions = predictions
-            best_metrics = metrics
-
-    print("KNN External Train/Test Results (90/10)")
-    print("Best k:", best_k)
-    print("Accuracy:", best_metrics["Accuracy"])
-    print("Precision:", best_metrics["Precision"])
-    print("Sensitivity:", best_metrics["Sensitivity"])
-    print("Specificity:", best_metrics["Specificity"])
-    print()
-
-    print("Confusion Matrix Values")
-    print("TP:", best_metrics["TP"])
-    print("FP:", best_metrics["FP"])
-    print("FN:", best_metrics["FN"])
-    print("TN:", best_metrics["TN"])
-    print()
-
-    print("Real Label  Predicted Label")
-    for real, pred in zip(y_test_list, best_predictions):
-        print(real, "        ", pred)
-    print()
+    print_results(f"KNN External Train/Test Results (90/10) using k={k}", knn_metrics)
+    print_label_predictions(y_test_list, knn_predictions)
 
     # --------------------------------
     # PART 4: SVM (90% Train / 10% Test)
     # --------------------------------
     y_true_svm_90_10, predictions_svm_90_10, metrics_svm_90_10 = svm_train_test(
-        X_train_full,
-        y_train_full,
-        X_test_external,
-        y_test_external
+        X_train,
+        y_train,
+        X_test,
+        y_test
     )
 
     print_results("SVM External Train/Test Results (90/10)", metrics_svm_90_10)
-
-    print("Real Label  Predicted Label")
-    for real, pred in zip(y_true_svm_90_10, predictions_svm_90_10):
-        print(real, "        ", pred)
-    print()
+    print_label_predictions(y_true_svm_90_10, predictions_svm_90_10)
 
     # --------------------------------
     # PART 4: SVM (10% Train / 90% Test)
     # --------------------------------
-    # Combine training + testing datasets so we can create a new 10/90 split
-    X_all = pd.concat([X_train_full, X_test_external], ignore_index=True)
-    y_all = pd.concat([y_train_full, y_test_external], ignore_index=True)
+    # Reverse the provided datasets for the 10/90 experiment:
+    # train on the provided testing set and test on the provided training set.
+    X_train_10 = X_test.copy()
+    y_train_10 = y_test.copy()
+    X_test_90 = X_train.copy()
+    y_test_90 = y_train.copy()
 
-    X_train_10, y_train_10, X_test_90, y_test_90 = train_test_split_df(X_all, y_all, train_percent=0.10)
+    X_train_10 = X_train_10.reindex(columns=X_test_90.columns, fill_value=0)
 
     y_true_svm_10_90, predictions_svm_10_90, metrics_svm_10_90 = svm_train_test(
         X_train_10,
@@ -299,9 +240,5 @@ if __name__ == "__main__":
         y_test_90
     )
 
-    print_results("SVM Train/Test Results (10/90)", metrics_svm_10_90)
-
-    print("Real Label  Predicted Label")
-    for real, pred in zip(y_true_svm_10_90, predictions_svm_10_90):
-        print(real, "        ", pred)
-    print()
+    print_results("SVM External Train/Test Results (10/90)", metrics_svm_10_90)
+    print_label_predictions(y_true_svm_10_90, predictions_svm_10_90)
